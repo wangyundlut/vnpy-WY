@@ -85,6 +85,8 @@ class BarData(BaseData):
     symbol: str
     exchange: Exchange
     datetime: datetime
+    datetime_start: datetime
+    datetime_end: datetime
 
     interval: Interval = None
     volume: float = 0

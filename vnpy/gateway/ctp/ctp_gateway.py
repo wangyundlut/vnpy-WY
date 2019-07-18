@@ -1,7 +1,8 @@
 """
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
 
 from vnpy.api.ctp import (
     MdApi,
@@ -57,9 +58,11 @@ from vnpy.trader.object import (
     OrderRequest,
     CancelRequest,
     SubscribeRequest,
+    BarData,
 )
 from vnpy.trader.utility import get_folder_path
-from vnpy.trader.event import EVENT_TIMER
+from vnpy.trader.event import EVENT_TIMER, EVENT_BAR
+from vnpy.trader.utility import BarGenerator
 
 
 STATUS_CTP2VT = {
@@ -117,6 +120,36 @@ OPTIONTYPE_CTP2VT = {
 symbol_exchange_map = {}
 symbol_name_map = {}
 symbol_size_map = {}
+# 增
+symbol_price_map = {}
+####
+# 增
+# 晚稻 鸡蛋 硅铁 锰硅 苹果 红枣
+DAYGROUP_1500 = ['wr', 'jd', 'sf', 'sm', 'ap', 'cj']
+# 塑料 PVC EG PP
+# 螺纹 热卷 燃油 沥青 橡胶 纸浆
+# 豆粕 豆油 豆一 豆二 棕榈油 玉米 玉米淀粉
+# 焦炭 焦煤 铁矿
+NIGHTGROUP_2300 = ['l', 'v', 'eg', 'pp',
+                   'rb', 'hc', 'fu', 'bu', 'ru', 'sp',
+                   'm', 'y', 'a', 'b', 'p', 'c', 'cs',
+                   'j', 'jm', 'i']
+# 白糖 棉花 棉纱 动力煤 玻璃 PTA 甲醇 菜油 菜粕
+NIGHTGROUP_2330 = ['sr', 'cf', 'cy', 'zc', 'fg', 'ta', 'ma', 'oi', 'rm']
+# 铜 铝 锌 铅 镍 锡
+NIGHTGROUP_0100 = ['cu', 'al', 'zn', 'pb', 'ni', 'sn']
+# 原油 黄金 白银
+NIGHTGROUP_0230 = ['sc', 'au', 'ag']
+COMMODITY = ['wr', 'jd', 'sf', 'sm', 'ap', 'cj',
+             'l', 'v', 'eg', 'pp',
+             'rb', 'hc', 'fu', 'bu', 'ru', 'sp',
+             'm', 'y', 'a', 'b', 'p', 'c', 'cs',
+             'j', 'jm', 'i',
+             'sr', 'cf', 'cy', 'zc', 'fg', 'ta', 'ma', 'oi', 'rm',
+             'cu', 'al', 'zn', 'pb', 'ni', 'sn',
+             'sc', 'au', 'ag'
+             ]
+FINANCE = ["if", "ih", "ic", "t", "ts", "tf"]
 
 
 class CtpGateway(BaseGateway):
@@ -163,7 +196,7 @@ class CtpGateway(BaseGateway):
         self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid, product_info)
         self.md_api.connect(md_address, userid, password, brokerid)
         
-        self.init_query()
+        # self.init_query()
 
     def subscribe(self, req: SubscribeRequest):
         """"""
@@ -196,9 +229,27 @@ class CtpGateway(BaseGateway):
         error_msg = error["ErrorMsg"]
         msg = f"{msg}，代码：{error_id}，信息：{error_msg}"
         self.write_log(msg)        
-    
+
     def process_timer_event(self, event):
         """"""
+        # 20秒检查一次
+        self.timer_count += 1
+        if self.timer_count < 20:
+            return
+        self.timer_count = 0
+
+        # 获取当前时间戳
+        current_time = datetime.now()
+        # 当前时间与tick最后一个时间的对比,如果有30秒未更新,则强制合成K线
+        for symbol, tick_time in self.md_api.tick_last_time_dict.items():
+            # 首次,没有时间
+            if not tick_time:
+                continue
+            # 如果接下来的时间差额大于20秒,强制生成一分钟Bar
+            elif current_time - tick_time > timedelta(seconds=60):
+                self.md_api.bg_dict[symbol].generate()
+
+        """
         self.count += 1
         if self.count < 2:
             return
@@ -207,12 +258,14 @@ class CtpGateway(BaseGateway):
         func = self.query_functions.pop(0)
         func()
         self.query_functions.append(func)
-        
+        """
+    """
     def init_query(self):
         """"""
         self.count = 0
         self.query_functions = [self.query_account, self.query_position]
         self.event_engine.register(EVENT_TIMER, self.process_timer_event)
+    """
 
 
 class CtpMdApi(MdApi):
@@ -234,6 +287,12 @@ class CtpMdApi(MdApi):
         self.userid = ""
         self.password = ""
         self.brokerid = ""
+
+        # 增
+        # K线合成容器,gateway推出一分钟K线
+        self.bg_dict = {}
+        # tick最后时间,用于生成一分钟K线
+        self.tick_last_time_dict = {}
     
     def onFrontConnected(self):
         """
@@ -281,6 +340,8 @@ class CtpMdApi(MdApi):
         """
         symbol = data["InstrumentID"]
         exchange = symbol_exchange_map.get(symbol, "")
+        # 增加
+        price_tick = symbol_price_map.get(symbol, 0.0001)
         if not exchange:
             return
         
@@ -293,20 +354,62 @@ class CtpMdApi(MdApi):
             name=symbol_name_map[symbol],
             volume=data["Volume"],
             open_interest=data["OpenInterest"],
-            last_price=data["LastPrice"],
-            limit_up=data["UpperLimitPrice"],
-            limit_down=data["LowerLimitPrice"],
-            open_price=data["OpenPrice"],
-            high_price=data["HighestPrice"],
-            low_price=data["LowestPrice"],
-            pre_close=data["PreClosePrice"],
-            bid_price_1=data["BidPrice1"],
-            ask_price_1=data["AskPrice1"],
+            last_price=round_to(data["LastPrice"], price_tick),
+            limit_up=round_to(data["UpperLimitPrice"], price_tick),
+            limit_down=round_to(data["LowerLimitPrice"], price_tick),
+            open_price=round_to(data["OpenPrice"], price_tick),
+            high_price=round_to(data["HighestPrice"], price_tick),
+            low_price=round_to(data["LowestPrice"], price_tick),
+            pre_close=round_to(data["PreClosePrice"], price_tick),
+            bid_price_1=round_to(data["BidPrice1"], price_tick),
+            ask_price_1=round_to(data["AskPrice1"], price_tick),
             bid_volume_1=data["BidVolume1"],
             ask_volume_1=data["AskVolume1"],
             gateway_name=self.gateway_name
         )
-        self.gateway.on_tick(tick)  
+
+        # 获取例如rb代码
+        symb = re.sub(r'\d', '', symbol).lower()
+        # 时间过滤，由于各个交易所品种不同，收盘时间不同
+        # 有些会在截止的时候发出TICK23:30:00（大商所）
+        # 有些不会在截止的时候发出TICK（郑商所）
+        # 这里将格式统一，统一不收取品种收盘时的TICK，然后自己合成
+        # 理论上，不会改变K线，最后一个TICK只是一些交易所用来确认时间点的
+        # 先处理通用时间窗口
+        tick_time = tick.datetime.strftime("%H:%M:%S")
+        if (tick_time >= '02:30:00') & (tick_time < '09:00:00'):
+            return
+        if (tick_time >= '10:15:00') & (tick_time < '10:30:00') & (symb in COMMODITY):
+            return
+        if (tick_time >= '11:30:00') & (tick_time < '13:30:00'):
+            return
+        if (tick_time >= '15:00:00') & (tick_time < '21:00:00'):
+            return
+        if (symb in NIGHTGROUP_2300) and tick_time >= '23:00:00':
+            return
+        # 时间和品种一起过滤
+        if (symb in NIGHTGROUP_2330) and tick_time >= '23:30:00':
+            return
+        if symb in NIGHTGROUP_0100:
+            current_time = datetime.now().strftime('%H:%M:%S')
+            # 当前是夜盘第二个交易日
+            if current_time <= '02:30:00':
+                # 当前时间超过最后一个TICK
+                if tick_time >= '01:00:00':
+                    return
+        # 推送出去tick
+        self.gateway.on_tick(tick)
+        bg = self.bg_dict.get(tick.symbol, None)
+        if bg:
+            bg.update_tick(tick)
+        else:
+            self.bg_dict[tick.symbol] = BarGenerator(self.on_bar)
+            self.bg_dict[tick.symbol].update_tick(tick)
+
+        self.tick_last_time_dict[tick.symbol] = tick.datetime
+
+    def on_bar(self, bar: BarData):
+        self.gateway.on_bar(bar)
 
     def connect(self, address: str, userid: str, password: str, brokerid: int):
         """
@@ -566,6 +669,8 @@ class CtpTdApi(TdApi):
             symbol_exchange_map[contract.symbol] = contract.exchange
             symbol_name_map[contract.symbol] = contract.name
             symbol_size_map[contract.symbol] = contract.size
+            # 增
+            symbol_price_map[contract.symbol] = contract.pricetick
         
         if last:
             self.gateway.write_log("合约信息查询成功")
@@ -731,7 +836,8 @@ class CtpTdApi(TdApi):
             "IsAutoSuspend": 0,
             "TimeCondition": THOST_FTDC_TC_GFD,
             "VolumeCondition": THOST_FTDC_VC_AV,
-            "MinVolume": 1
+            "MinVolume": 1,
+            "ExchangeID": symbol_exchange_map[req.symbol].value
         }
         
         if req.type == OrderType.FAK:
@@ -798,3 +904,13 @@ class CtpTdApi(TdApi):
         """"""
         if self.connect_status:
             self.exit()
+
+
+# 增
+def round_to(value: float, target: float):
+    """
+    Round price to price tick value.
+    """
+    rounded = round(int(round(value / target)) * target, 5)
+    return rounded
+

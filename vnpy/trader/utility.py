@@ -5,12 +5,43 @@ General utility functions.
 import json
 from pathlib import Path
 from typing import Callable
+from datetime import datetime, timedelta
 
 import numpy as np
 import talib
+import math
 
 from .object import BarData, TickData
 from .constant import Exchange, Interval
+
+####
+# 增
+# 晚稻 鸡蛋 硅铁 锰硅 苹果 红枣
+DAYGROUP_1500 = ['wr', 'jd', 'sf', 'sm', 'ap', 'cj']
+# 塑料 PVC EG PP
+# 螺纹 热卷 燃油 沥青 橡胶 纸浆
+# 豆粕 豆油 豆一 豆二 棕榈油 玉米 玉米淀粉
+# 焦炭 焦煤 铁矿
+NIGHTGROUP_2300 = ['l', 'v', 'eg', 'pp',
+                   'rb', 'hc', 'fu', 'bu', 'ru', 'sp',
+                   'm', 'y', 'a', 'b', 'p', 'c', 'cs',
+                   'j', 'jm', 'i']
+# 白糖 棉花 棉纱 动力煤 玻璃 PTA 甲醇 菜油 菜粕
+NIGHTGROUP_2330 = ['sr', 'cf', 'cy', 'zc', 'fg', 'ta', 'ma', 'oi', 'rm']
+# 铜 铝 锌 铅 镍 锡
+NIGHTGROUP_0100 = ['cu', 'al', 'zn', 'pb', 'ni', 'sn']
+# 原油 黄金 白银
+NIGHTGROUP_0230 = ['sc', 'au', 'ag']
+COMMODITY = ['wr', 'jd', 'sf', 'sm', 'ap', 'cj',
+             'l', 'v', 'eg', 'pp',
+             'rb', 'hc', 'fu', 'bu', 'ru', 'sp',
+             'm', 'y', 'a', 'b', 'p', 'c', 'cs',
+             'j', 'jm', 'i',
+             'sr', 'cf', 'cy', 'zc', 'fg', 'ta', 'ma', 'oi', 'rm',
+             'cu', 'al', 'zn', 'pb', 'ni', 'sn',
+             'sc', 'au', 'ag'
+             ]
+FINANCE = ["if", "ih", "ic", "t", "ts", "tf"]
 
 
 def extract_vt_symbol(vt_symbol: str):
@@ -158,10 +189,10 @@ class BarGenerator:
 
         if not self.bar:
             new_minute = True
-        elif self.bar.datetime.minute != tick.datetime.minute:
-            self.bar.datetime = self.bar.datetime.replace(
-                second=0, microsecond=0
-            )
+        # 这里修改成,如果tick的时间是下一分钟了,就推送原来的BarData 或者 tick的时间大于等于Bar的datetime end
+        # 原逻辑有问题,因为Bar是闭开的,不是开闭区间
+        elif (self.bar.datetime.minute != tick.datetime.minute) or \
+                (tick.datetime >= self.bar.datetime_end):
             self.on_bar(self.bar)
 
             new_minute = True
@@ -170,8 +201,11 @@ class BarGenerator:
             self.bar = BarData(
                 symbol=tick.symbol,
                 exchange=tick.exchange,
+                datetime=tick.datetime.replace(second=0, microsecond=0),
+                datetime_start=tick.datetime.replace(second=0, microsecond=0),
+                datetime_end=tick.datetime.replace(second=0, microsecond=0) + timedelta(minutes=1),
+
                 interval=Interval.MINUTE,
-                datetime=tick.datetime,
                 gateway_name=tick.gateway_name,
                 open_price=tick.last_price,
                 high_price=tick.last_price,
@@ -184,7 +218,7 @@ class BarGenerator:
             self.bar.low_price = min(self.bar.low_price, tick.last_price)
             self.bar.close_price = tick.last_price
             self.bar.open_interest = tick.open_interest
-            self.bar.datetime = tick.datetime
+            # self.bar.datetime = tick.datetime
 
         if self.last_tick:
             volume_change = tick.volume - self.last_tick.volume
@@ -195,25 +229,153 @@ class BarGenerator:
     def update_bar(self, bar: BarData):
         """
         Update 1 minute bar into generator
+        window_bar更新, 5分钟 10分钟等
+        功能就是:输入进来1分钟的Bar,合成5分钟或者15分钟之类的Bar
+        改: 将update_bar变成完全的update_bar 分钟Bar 而将Update_bar里面的更新小时Bar提取出来,增加出来
+        因为这里的逻辑,本身就是要输入的是小时线,才可以合成更多周期的小时线
+        而且这里没有写K线的周期,很不方便
+        1 正常情况下
         """
-        # If not inited, creaate window bar object
+        # If not inited, create window bar object
+        # 如果没有window_bar
+        dt = bar.datetime.replace(second=0, microsecond=0)
+        if self.window == 3:
+            period = Interval.MINUTE3
+            dt_start = bar.datetime.replace(minute=math.floor(dt.minute / 3) * 3)
+            dt_end = dt_start + timedelta(minutes=3)
+        elif self.window == 5:
+            period = Interval.MINUTE5
+            dt_start = bar.datetime.replace(minute=math.floor(dt.minute / 5) * 5)
+            dt_end = dt_start + timedelta(minutes=5)
+        elif self.window == 15:
+            period = Interval.MINUTE15
+            dt_start = bar.datetime.replace(minute=math.floor(dt.minute / 15) * 15)
+            dt_end = dt_start + timedelta(minutes=15)
+        elif self.window == 30:
+            period = Interval.MINUTE30
+            dt_start = bar.datetime.replace(minute=math.floor(dt.minute / 30) * 30)
+            dt_end = dt_start + timedelta(minutes=30)
+            # 如果是商品期货,小时==10 分钟 == 0,30分钟线的终值为15
+            if (bar.symbol in COMMODITY) and \
+                (bar.datetime.hour == 10) and \
+                (dt_start.minute == 0):
+                dt_end = dt_end.replace(minute=15)
+        elif self.window == 60:
+            period = Interval.HOUR
+            dt_start = bar.datetime.replace(minute=0)
+            dt_end = dt_start + timedelta(hours=1)
+            if dt_start.hour == 11:
+                dt_end = dt_end.replace(minute=30)
+
+            if (dt_start.hour == 13) and (bar.symbol in COMMODITY):
+                dt_start = dt_start.replace(minute=30)
+
+            if (dt_start.hour == 23) and (bar.symbol in NIGHTGROUP_2330):
+                dt_end = dt_end.replace(minute=30)
+
+            if (dt_start.hour == 2) and (bar.symbol in NIGHTGROUP_0230):
+                dt_end = dt_end.replace(minute=30)
+
         if not self.window_bar:
             # Generate timestamp for bar data
-            if self.interval == Interval.MINUTE:
-                dt = bar.datetime.replace(second=0, microsecond=0)
-            else:
-                dt = bar.datetime.replace(minute=0, second=0, microsecond=0)
-
+            # 如果是分钟Bar,创建datetime
+            # 创建Bar数据
             self.window_bar = BarData(
                 symbol=bar.symbol,
                 exchange=bar.exchange,
                 datetime=dt,
+                datetime_start=dt_start,
+                datetime_end=dt_end,
+                interval=period,
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
                 low_price=bar.low_price
             )
         # Otherwise, update high/low price into window bar
+        # 如果已经进行了初始化,
+        else:
+            # 这里加入新的合成逻辑，如果是不连续的bar,先推送
+            # 如果有跳线的情况
+            if bar.datetime >= self.window_bar.datetime_end:
+                self.on_window_bar(self.window_bar)
+                self.window_bar = None
+
+            self.window_bar = BarData(
+                symbol=bar.symbol,
+                exchange=bar.exchange,
+                datetime=dt,
+                datetime_start=dt_start,
+                datetime_end=dt_end,
+                interval=period,
+                gateway_name=bar.gateway_name,
+                open_price=bar.open_price,
+                high_price=bar.high_price,
+                low_price=bar.low_price
+            )
+
+            self.window_bar.high_price = max(
+                self.window_bar.high_price, bar.high_price)
+            self.window_bar.low_price = min(
+                self.window_bar.low_price, bar.low_price)
+
+        # Update close price/volume into window bar
+        # 更新最新价,交易量
+        self.window_bar.close_price = bar.close_price
+        self.window_bar.volume += int(bar.volume)
+        self.window_bar.open_interest = bar.open_interest
+
+        # Check if window bar completed
+        # 先假定没有完成
+        finished = False
+
+        # 如果是分钟Bar
+        if self.interval == Interval.MINUTE:
+            # x-minute bar
+            # 如果是5分钟,则规则为: 4 + 1 整除5就推送,如果是15分钟,规则: 14 + 1 整除 15 推送
+            # 如果是60分钟,则59+1 % 60 = 0, 其余不为0
+            if not ((bar.datetime.minute + 1) % self.window) or \
+                    ((bar.datetime + timedelta(minutes=1)) >= self.window_bar.datetime_end):
+                finished = True
+
+        if finished:
+            self.on_window_bar(self.window_bar)
+            self.window_bar = None
+
+        # Cache last bar object
+        self.last_bar = bar
+
+    def update_bar_hour(self, bar: BarData):
+        """
+        这里输入的是小时Bar
+        """
+        # If not inited, create window bar object
+        # 如果没有初始化
+        if not self.window_bar:
+            # Generate timestamp for bar data
+            # 将数据变成整点数据
+            dt = bar.datetime.replace(minute=0, second=0, microsecond=0)
+
+            # 创建Bar数据
+            if self.window == 2:
+                period = Interval.HOUR2
+            elif self.window == 4:
+                period = Interval.HOUR4
+            elif self.window == 6:
+                period = Interval.HOUR6
+
+            self.window_bar = BarData(
+                symbol=bar.symbol,
+                exchange=bar.exchange,
+                datetime=dt,
+                interval=period,
+                gateway_name=bar.gateway_name,
+                open_price=bar.open_price,
+                high_price=bar.high_price,
+                low_price=bar.low_price
+            )
+        # Otherwise, update high/low price into window bar
+        # 如果有初始化,则进行高地价的更新
         else:
             self.window_bar.high_price = max(
                 self.window_bar.high_price, bar.high_price)
@@ -221,29 +383,23 @@ class BarGenerator:
                 self.window_bar.low_price, bar.low_price)
 
         # Update close price/volume into window bar
+        # 更新最新价,交易量
         self.window_bar.close_price = bar.close_price
         self.window_bar.volume += int(bar.volume)
         self.window_bar.open_interest = bar.open_interest
 
         # Check if window bar completed
+        # 先假定没有完成
         finished = False
 
-        if self.interval == Interval.MINUTE:
-            # x-minute bar
-            if not (bar.datetime.minute + 1) % self.window:
+        # 如果存在上一个Bar
+        if self.last_bar and bar.datetime.hour != self.last_bar.datetime.hour:
+            # 1-hour bar
+            # 如果是一小时的Bar,则小时Bar推送结束
+            # 如果当前的
+            if not (bar.datetime.hour + 1) % self.window:
                 finished = True
-        elif self.interval == Interval.HOUR:
-            if self.last_bar and bar.datetime.hour != self.last_bar.datetime.hour:
-                # 1-hour bar
-                if self.window == 1:
-                    finished = True
-                # x-hour bar
-                else:
-                    self.interval_count += 1
-
-                    if not self.interval_count % self.window:
-                        finished = True
-                        self.interval_count = 0
+                self.interval_count = 0
 
         if finished:
             self.on_window_bar(self.window_bar)
@@ -255,12 +411,21 @@ class BarGenerator:
     def generate(self):
         """
         Generate the bar data and call callback immediately.
+        强制合成由tick合成的一分钟线,在尾盘的时候用到
         """
         self.bar.datetime = self.bar.datetime.replace(
             second=0, microsecond=0
         )
         self.on_bar(self.bar)
         self.bar = None
+
+    def generate_window_bar(self):
+        """
+        Generate the window bar data and call callback immediately.
+        强制合成由bar合成的分钟线,在尾盘的时候用到
+        """
+        self.on_window_bar(self.window_bar)
+        self.window_bar = None
 
 
 class ArrayManager(object):
@@ -276,6 +441,7 @@ class ArrayManager(object):
         self.size = size
         self.inited = False
 
+        self.time_array = []
         self.open_array = np.zeros(size)
         self.high_array = np.zeros(size)
         self.low_array = np.zeros(size)
@@ -290,12 +456,15 @@ class ArrayManager(object):
         if not self.inited and self.count >= self.size:
             self.inited = True
 
+        if len(self.time_array) >= self.size:
+            self.time_array.pop(0)
         self.open_array[:-1] = self.open_array[1:]
         self.high_array[:-1] = self.high_array[1:]
         self.low_array[:-1] = self.low_array[1:]
         self.close_array[:-1] = self.close_array[1:]
         self.volume_array[:-1] = self.volume_array[1:]
 
+        self.time_array.append(bar.datetime)
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
         self.low_array[-1] = bar.low_price
@@ -342,6 +511,15 @@ class ArrayManager(object):
         Simple moving average.
         """
         result = talib.SMA(self.close, n)
+        if array:
+            return result
+        return result[-1]
+
+    def ema(self, n, array=False):
+        """
+        E moving average.
+        """
+        result = talib.EMA(self.close, n)
         if array:
             return result
         return result[-1]
@@ -445,3 +623,93 @@ def virtual(func: "callable"):
     that can be (re)implemented by subclasses.
     """
     return func
+
+# 输入tick数据或分钟数据的时间（datetime对象），品种，以及周期，得到交易日的  起始时间，终止时间，交易日期
+def timeStartEnd(time: datetime, instrument: str, interval: Interval):
+    # 夜盘品种，先解决tradeday
+    if time.hour >= 21 and time.hour <= 23:
+        # 周五晚上
+        if time.weekday() == 4:
+            tradeday = (time + timedelta(days=2, hours=5)).replace(hour=0)
+        else:
+            tradeday = (time + timedelta(hours=5)).replace(hour=0)
+    elif time.hour < 3:
+        # 周六凌晨
+        if time.weekday() == 5:
+            tradeday = (time + timedelta(days=2, hours=5)).replace(hour=0)
+        else:
+            tradeday = (time + timedelta(hours=5)).replace(hour=0)
+    elif time.hour >= 9 and time.hour <= 15:
+        tradeday = time.replace(hour=0)
+    else:
+        print('输入的时间不在交易范围之内，请检查')
+        tradeday=None
+
+    tradeday = tradeday.replace(hour=9)
+
+    # 解决start 和 end的问题
+    # 1分钟K线采用闭开区间定义start 和 end
+    tradeday = tradeday.replace(second=0, microsecond=0)
+    if interval == Interval.MINUTE:
+        timestart = time.replace(second=0, microsecond=0)
+        timeend = timestart + timedelta(minutes=1)
+        return timestart, timeend, tradeday
+    elif interval == Interval.MINUTE5:
+        minstart = math.floor(time.minute / 5) * 5
+        timestart = time.replace(minute=minstart)
+        timeend = timestart + timedelta(minutes=5)
+        return timestart, timeend, tradeday
+    elif interval == Interval.MINUTE15:
+        minstart = math.floor(time.minute / 15) * 15
+        timestart = time.replace(minute=minstart)
+        timeend = timestart + timedelta(minutes=15)
+        return timestart, timeend, tradeday
+    elif interval == INTERVAL_30M:
+        minstart = math.floor(time.minute / 30) * 30
+        timestart = time.replace(minute=minstart)
+        timeend = timestart + timedelta(minutes=29, seconds=59)
+        # 30分钟的K线起始终止时间节点，要代替一下
+        if timeend.hour == 10 and timeend.minute == 29:
+            timeend = timeend.replace(minute=14)
+        return timestart, timeend, tradeday
+    # 60分钟这里
+    elif interval == INTERVAL_60M:
+        timestart = time.replace(minute=0)
+        timeend = timestart + timedelta(minutes=59, seconds=59)
+        # 30分钟的K线起始终止时间节点，要代替一下
+        if timeend.hour == 11 and timeend.minute == 59:
+            timeend = timeend.replace(minute=29)
+        elif timeend.hour == 2 and timeend.minute == 59:
+            timeend = timeend.replace(minute=29)
+        elif timeend.hour == 23 and timeend.minute == 59:
+            # 晚上23点的这个，很麻烦，之前大商所是凌晨1点闭市，之后改为晚上23点半闭市
+            if instrument == 'j':
+                if time.strftime('%Y-%m-%d') >= '2015-05-08':
+                    timeend = timeend.replace(minute=29)
+        return timestart, timeend, tradeday
+    elif interval == INTERVAL_1D:
+        # 夜盘品种
+        timeend = tradeday.replace(hour=14, minute=59, second=59)
+        # 夜盘品种
+        if instrument in ['rb', 'j', 'i', 'jm']:
+            if time.hour >= 21 and time.hour <= 23:
+                timestart = time.replace(hour=21)
+            elif time.hour < 3:
+                timestart = (time - timedelta(hours=5)).replace(hour=21)
+            # 如果是夜盘品种，但是前一天没有数据，那么默认假日模式，
+            elif time.hour >= 9 and time.hour <= 15:
+                if time.weekday() == 0:
+                    timestart = (time - timedelta(days=3)).replace(hour=21)
+                else:
+                    timestart = (time - timedelta(days=1)).replace(hour=21)
+            else:
+                print('输入的时间不在交易范围之内，请检查')
+        # 日盘品种
+        else:
+            timestart = time.replace(hour=9)
+    else:
+        print('输入的时间周期有误，请重新输入')
+        timestart = None
+        timeend = None
+
+    return timestart, timeend, tradeday
