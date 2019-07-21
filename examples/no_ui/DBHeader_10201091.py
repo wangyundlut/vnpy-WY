@@ -5,6 +5,7 @@ from vnpy.app.cta_strategy.DBMongo import dbMongo
 # 设置数据库的表头,增加易读性
 # 设置
 
+
 def BarHeader(account_id):
     d = {
         "account_id": "",
@@ -46,6 +47,7 @@ def OrderHeader(account_id):
 
     }
     db.dbUpdate(account_id, "Order_Data", d, {}, True)
+
 
 def TradeHeader(account_id):
     d = {
@@ -199,37 +201,47 @@ def cta_strategy_dataHeader13(db_name):
 
 
 def doublema_setting(account_id):
-    d = {
-        "class_name": "DoubleMaStrategy",
-        "strategy_name": "doublema_rb2001",
-        "vt_symbol": "rb2001.SHFE",
-        "setting": {
+    for symbol in [["rb2001", "SHFE"],
+                   ["au1912", "SHFE"],
+                   ["TA001", "CZCE"],
+                   ["m2001", "DCE"],]:
+        d = {
             "class_name": "DoubleMaStrategy",
-            "fast_window": 10,
-            "slow_window": 30
-        },
-    }
-    db.dbUpdate(account_id, "cta_strategy_setting", d, {"strategy_name": d["strategy_name"]}, True)
+            "strategy_name": "doublema_" + symbol[0],
+            "vt_symbol": symbol[0] + "." + symbol[1],
+            "setting": {
+                "class_name": "DoubleMaStrategy",
+                "fast_window": 10,
+                "slow_window": 30
+            },
+            }
+        db.dbUpdate(account_id, "cta_strategy_setting", d, {"strategy_name": d["strategy_name"]}, True)
+
 
 def doublema_data(account_id):
-    d = {
-        "strategy_name": "doublema_rb2001",
+    for symbol in [["rb2001", "SHFE"],
+                   ["au1912", "SHFE"],
+                   ["TA001", "CZCE"],
+                   ["m2001", "DCE"], ]:
+        d = {
+            "strategy_name": "doublema_" + symbol[0],
 
-        "data": {
-            "fast_ma0": 1,
-            "fast_ma1": 2,
-            "slow_ma0": 3,
-            "slow_ma1": 4,
-            "pos": 0,
-        },
-    }
-    db.dbUpdate(account_id, "cta_strategy_data", d, {"strategy_name": d["strategy_name"]}, True)
+            "data": {
+                "fast_ma0": 1,
+                "fast_ma1": 2,
+                "slow_ma0": 3,
+                "slow_ma1": 4,
+                "pos": 0,
+            },
+        }
+        db.dbUpdate(account_id, "cta_strategy_data", d, {"strategy_name": d["strategy_name"]}, True)
+
 
 
 
 if __name__ == "__main__":
     db = dbMongo()
-    accountid = "123609"
+    accountid = "10201091"
     doublema_setting(accountid)
     doublema_data(accountid)
     # PositionHeader("mytest")

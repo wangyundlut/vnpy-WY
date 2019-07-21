@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from vnpy.app.cta_strategy import (
     CtaTemplate,
     StopOrder,
@@ -8,12 +9,13 @@ from vnpy.app.cta_strategy import (
     BarGenerator,
     ArrayManager,
 )
-# 这个策略用来收集K线和测试K线用的
 
 
-class DoubleMaStrategy(CtaTemplate):
+
+class DoubleEmaStrategy(CtaTemplate):
     author = "用Python的交易员"
 
+    slip = 0
     fast_window = 10
     slow_window = 20
 
@@ -23,12 +25,12 @@ class DoubleMaStrategy(CtaTemplate):
     slow_ma0 = 0.0
     slow_ma1 = 0.0
 
-    parameters = ["fast_window", "slow_window"]
+    parameters = ["slip", "fast_window", "slow_window"]
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
-        super(DoubleMaStrategy, self).__init__(
+        super(DoubleEmaStrategy, self).__init__(
             cta_engine, strategy_name, vt_symbol, setting
         )
 
@@ -51,7 +53,7 @@ class DoubleMaStrategy(CtaTemplate):
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
-        self.load_bar(10)
+        self.load_bar(300)
 
     def on_start(self):
         """
@@ -109,6 +111,24 @@ class DoubleMaStrategy(CtaTemplate):
         cross_over = self.fast_ma0 > self.slow_ma0 and self.fast_ma1 < self.slow_ma1
         cross_below = self.fast_ma0 < self.slow_ma0 and self.fast_ma1 > self.slow_ma1
 
+        if cross_over:
+            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1分钟EMA线上穿")
+
+            if self.pos == 0:
+                self.buy(bar.close_price + self.slip, 1)
+            elif self.pos < 0:
+                self.cover(bar.close_price + self.slip, 1)
+                self.buy(bar.close_price + self.slip, 1)
+
+        if cross_below:
+            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1分钟EMA线下穿")
+
+            if self.pos == 0:
+                self.short(bar.close_price - self.slip, 1)
+            elif self.pos > 0:
+                self.sell(bar.close_price - self.slip, 1)
+                self.short(bar.close_price - self.slip, 1)
+
     def on_5min_bar(self, bar: BarData):
         am5 = self.am5
         if am5.count != 0:
@@ -157,7 +177,7 @@ class DoubleMaStrategy(CtaTemplate):
             # 只有时间符合的才更新
             if bar.datetime > am60.time_array[-1]:
                 am60.update_bar(bar)
-                self.write_log("double_ma_strategy 1小时Bar" + str(bar.__dict__))
+                self.write_log("double_ema_strategy 1小时Bar" + str(bar.__dict__))
         else:
             am60.update_bar(bar)
         if not am60.inited:
@@ -174,6 +194,11 @@ class DoubleMaStrategy(CtaTemplate):
 
         cross_over = self.fast_ma0 > self.slow_ma0 and self.fast_ma1 < self.slow_ma1
         cross_below = self.fast_ma0 < self.slow_ma0 and self.fast_ma1 > self.slow_ma1
+        if cross_over:
+            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1小时EMA线上穿")
+
+        if cross_below:
+            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1小时EMA线下穿")
         """
         if cross_over:
             if self.pos == 0:

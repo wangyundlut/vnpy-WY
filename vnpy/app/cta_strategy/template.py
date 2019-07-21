@@ -2,6 +2,8 @@
 from abc import ABC
 from copy import copy
 from typing import Any, Callable
+from datetime import datetime, timedelta
+from dingtalkchatbot.chatbot import DingtalkChatbot
 
 from vnpy.trader.constant import Interval, Direction, Offset
 from vnpy.trader.object import BarData, TickData, OrderData, TradeData
@@ -9,6 +11,8 @@ from vnpy.trader.utility import virtual
 
 from .base import StopOrder, EngineType
 
+webhook="https://oapi.dingtalk.com/robot/send?access_token=47256d14344d41c72f9bd573b8773adf8efc9680d1f588633bad561672845809"
+ding = DingtalkChatbot(webhook=webhook)
 
 class CtaTemplate(ABC):
     """"""
@@ -258,6 +262,13 @@ class CtaTemplate(ABC):
         """
         if self.trading:
             self.cta_engine.sync_strategy_data(self)
+
+    def ding(self, msg: str):
+        msg = datetime.now().strftime("%Y-m-%d %H:%M:%S") + ": " + msg
+        try:
+            ding.send_text(msg, True)
+        except Exception as e:
+            self.write_log(msg + " 发送失败!")
 
 
 class CtaSignal(ABC):

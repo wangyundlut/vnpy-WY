@@ -3,6 +3,7 @@ General utility functions.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Callable
 from datetime import datetime, timedelta
@@ -177,6 +178,8 @@ class BarGenerator:
         self.last_tick = None
         self.last_bar = None
 
+        self.open_flag = False
+
     def update_tick(self, tick: TickData):
         """
         Update new tick data into generator.
@@ -198,6 +201,30 @@ class BarGenerator:
             new_minute = True
 
         if new_minute:
+
+            symb = re.sub(r'\d', '', tick.symbol).lower()
+            if symb in COMMODITY:
+                # 如果是早上刚开盘9:00 或者10:30 13:30 21:00,不允许修改开盘价
+                if tick.datetime.hour == 9 and tick.datetime.minute == 0:
+                    self.open_flag = False
+                elif tick.datetime.hour == 10 and tick.datetime.minute == 30:
+                    self.open_flag = False
+                elif tick.datetime.hour == 13 and tick.datetime.minute == 30:
+                    self.open_flag = False
+                elif tick.datetime.hour == 21 and tick.datetime.minute == 0:
+                    self.open_flag = False
+                # 其他时间段,允许修改开盘价
+                else:
+                    self.open_flag = True
+                    # 如果有上一个tick
+                    if self.last_tick:
+                        # 如果在创建的时候,也是有成交量的,则不允许修改
+                        if tick.volume > self.last_tick.volume:
+                            self.open_flag = False
+                        # 如果在创建Bar的时候,没有成交量,那么允许修改开盘价
+                        else:
+                            self.open_flag = True
+
             self.bar = BarData(
                 symbol=tick.symbol,
                 exchange=tick.exchange,
@@ -213,6 +240,7 @@ class BarGenerator:
                 close_price=tick.last_price,
                 open_interest=tick.open_interest
             )
+
         else:
             self.bar.high_price = max(self.bar.high_price, tick.last_price)
             self.bar.low_price = min(self.bar.low_price, tick.last_price)
@@ -223,6 +251,14 @@ class BarGenerator:
         if self.last_tick:
             volume_change = tick.volume - self.last_tick.volume
             self.bar.volume += max(volume_change, 0)
+            # 如果当前允许修改开盘价
+            if self.open_flag:
+                # 只有成交价格变动的tick 使得价格改变
+                if volume_change:
+                    self.bar.open_price = tick.last_price
+                    self.bar.high_price = tick.last_price
+                    self.bar.low_price = tick.last_price
+                    self.open_flag = False
 
         self.last_tick = tick
 

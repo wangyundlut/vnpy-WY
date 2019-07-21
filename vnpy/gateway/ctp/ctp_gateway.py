@@ -176,6 +176,8 @@ class CtpGateway(BaseGateway):
 
         self.td_api = CtpTdApi(self)
         self.md_api = CtpMdApi(self)
+        self.timer_count = 0
+        self.event_engine.register(EVENT_TIMER, self.process_timer_event)
 
     def connect(self, setting: dict):
         """"""
@@ -245,9 +247,13 @@ class CtpGateway(BaseGateway):
             # 首次,没有时间
             if not tick_time:
                 continue
+            # 如果是已经更新完了的bar
+            elif not self.md_api.bg_dict[symbol].bar:
+                continue
             # 如果接下来的时间差额大于20秒,强制生成一分钟Bar
             elif current_time - tick_time > timedelta(seconds=60):
                 self.md_api.bg_dict[symbol].generate()
+                print(self.md_api.bg_dict.items())
 
         """
         self.count += 1

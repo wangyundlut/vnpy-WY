@@ -92,6 +92,7 @@ INTERVAL_DB2VT = {
      "12h": Interval.HOUR12,
 }
 
+
 class CtaEngine(BaseEngine):
     """Cta引擎，提供Cta功能与主引擎的交互"""
 
@@ -223,6 +224,14 @@ class CtaEngine(BaseEngine):
         """处理tick事件，主要是向订阅了tick的策略推送"""
         tick = event.data
 
+        d = deepcopy(tick.__dict__)
+        d["exchange"] = d["exchange"].value
+        flt = {
+            "vt_symbol": d["vt_symbol"],
+            "datetime": d["datetime"],
+        }
+        self.db_queue.put(["update", "TickData", d["symbol"], d, flt])
+
         strategies = self.symbol_strategy_map[tick.vt_symbol]
         if not strategies:
             return
@@ -255,19 +264,19 @@ class CtaEngine(BaseEngine):
 
             # =================================
             # 这里在测试的时候,写入数据库和log两种形式
+            if self.account_id == "10201091":
+                # 实盘中,只写入数据库中
+                d = deepcopy(bar.__dict__)
+                d["exchange"] = d["exchange"].value
+                d["interval"] = d["interval"].value
+                flt = {
+                    "vt_symbol": d["vt_symbol"],
+                    "interval": d["interval"],
+                    "datetime_start": d["datetime_start"],
+                       }
+                self.db_queue.put(["update", "BarData", d["symbol"], d, flt])
 
-            # 实盘中,只写入数据库中
-            d = deepcopy(bar.__dict__)
-            d["exchange"] = d["exchange"].value
-            d["interval"] = d["interval"].value
-            flt = {
-                "vt_symbol": d["vt_symbol"],
-                "interval": d["interval"],
-                "datetime_start": d["datetime_start"],
-                   }
-            self.db_queue.put(["update", "BarData", d["symbol"], d, flt])
-
-            # =================================
+                # =================================
 
     def process_order_event(self, event: Event):
         """处理order事件"""
