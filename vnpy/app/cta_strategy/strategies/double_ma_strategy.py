@@ -157,7 +157,6 @@ class DoubleMaStrategy(CtaTemplate):
             # 只有时间符合的才更新
             if bar.datetime > am60.time_array[-1]:
                 am60.update_bar(bar)
-                self.write_log("double_ma_strategy 1小时Bar" + str(bar.__dict__))
         else:
             am60.update_bar(bar)
         if not am60.inited:

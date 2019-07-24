@@ -200,12 +200,21 @@ def cta_strategy_dataHeader13(db_name):
     db.dbUpdate(db_name, "cta_strategy_data", d, {}, True)
 
 
+symbol_list = [["rb2001", "SHFE", 10],
+               ["au1912", "SHFE", 0.5],
+               ["TA001", "CZCE", 20],
+               ["m2001", "DCE", 6],
+               ["j1909", "DCE", 1],
+               ["ni1910", "SHFE", 20],
+               ]
+symbol_li = [
+                   ["j1909", "DCE", 1],
+                   ["ni1910", "SHFE", 20],
+                   ]
+
+
 def doublema_setting(account_id):
-    for symbol in [["rb2001", "SHFE", 10],
-                   ["au1912", "SHFE", 0.5],
-                   ["TA001", "CZCE", 20],
-                   ["m2001", "DCE", 6]
-                   ]:
+    for symbol in symbol_li:
         d = {
             "class_name": "DoubleEmaStrategy",
             "strategy_name": "doubleema_" + symbol[0],
@@ -221,10 +230,7 @@ def doublema_setting(account_id):
 
 
 def doublema_data(account_id):
-    for symbol in [["rb2001", "SHFE"],
-                   ["au1912", "SHFE"],
-                   ["TA001", "CZCE"],
-                   ["m2001", "DCE"], ]:
+    for symbol in symbol_li:
         d = {
             "strategy_name": "doubleema_" + symbol[0],
 

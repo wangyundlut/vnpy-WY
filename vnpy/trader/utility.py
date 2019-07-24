@@ -326,7 +326,8 @@ class BarGenerator:
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
-                low_price=bar.low_price
+                low_price=bar.low_price,
+                open_interest=bar.open_interest
             )
         # Otherwise, update high/low price into window bar
         # 如果已经进行了初始化,
@@ -337,18 +338,19 @@ class BarGenerator:
                 self.on_window_bar(self.window_bar)
                 self.window_bar = None
 
-            self.window_bar = BarData(
-                symbol=bar.symbol,
-                exchange=bar.exchange,
-                datetime=dt,
-                datetime_start=dt_start,
-                datetime_end=dt_end,
-                interval=period,
-                gateway_name=bar.gateway_name,
-                open_price=bar.open_price,
-                high_price=bar.high_price,
-                low_price=bar.low_price
-            )
+                self.window_bar = BarData(
+                    symbol=bar.symbol,
+                    exchange=bar.exchange,
+                    datetime=dt,
+                    datetime_start=dt_start,
+                    datetime_end=dt_end,
+                    interval=period,
+                    gateway_name=bar.gateway_name,
+                    open_price=bar.open_price,
+                    high_price=bar.high_price,
+                    low_price=bar.low_price,
+                    open_interest=bar.open_interest
+                )
 
             self.window_bar.high_price = max(
                 self.window_bar.high_price, bar.high_price)
@@ -359,7 +361,7 @@ class BarGenerator:
         # 更新最新价,交易量
         self.window_bar.close_price = bar.close_price
         self.window_bar.volume += int(bar.volume)
-        self.window_bar.open_interest = bar.open_interest
+        # self.window_bar.open_interest = bar.open_interest
 
         # Check if window bar completed
         # 先假定没有完成
@@ -408,7 +410,8 @@ class BarGenerator:
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
                 high_price=bar.high_price,
-                low_price=bar.low_price
+                low_price=bar.low_price,
+                open_interest=bar.open_interest
             )
         # Otherwise, update high/low price into window bar
         # 如果有初始化,则进行高地价的更新
@@ -422,7 +425,7 @@ class BarGenerator:
         # 更新最新价,交易量
         self.window_bar.close_price = bar.close_price
         self.window_bar.volume += int(bar.volume)
-        self.window_bar.open_interest = bar.open_interest
+        # self.window_bar.open_interest = bar.open_interest
 
         # Check if window bar completed
         # 先假定没有完成

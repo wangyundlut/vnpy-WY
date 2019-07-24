@@ -264,11 +264,12 @@ class CtaTemplate(ABC):
             self.cta_engine.sync_strategy_data(self)
 
     def ding(self, msg: str):
-        msg = datetime.now().strftime("%Y-m-%d %H:%M:%S") + ": " + msg
-        try:
-            ding.send_text(msg, True)
-        except Exception as e:
-            self.write_log(msg + " 发送失败!")
+        msg = datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ": " + msg
+        if self.trading:
+            try:
+                ding.send_text(msg, True)
+            except Exception as e:
+                self.write_log(msg + " 发送失败!")
 
 
 class CtaSignal(ABC):

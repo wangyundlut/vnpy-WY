@@ -177,6 +177,7 @@ class CtpGateway(BaseGateway):
         self.td_api = CtpTdApi(self)
         self.md_api = CtpMdApi(self)
         self.timer_count = 0
+        self.start_tick = False
         self.event_engine.register(EVENT_TIMER, self.process_timer_event)
 
     def connect(self, setting: dict):
@@ -242,6 +243,17 @@ class CtpGateway(BaseGateway):
 
         # 获取当前时间戳
         current_time = datetime.now()
+        if not self.start_tick:
+            # 只有正常开启的行情,才会接受数据,非正常服务器时间接受的数据,不作数
+            if current_time.hour == 8:
+                if current_time.minute >= 50:
+                    self.md_api.trading = True
+                    self.start_tick = True
+            if current_time.hour == 20:
+                if current_time.minute >= 50:
+                    self.md_api.trading = True
+                    self.start_tick = True
+
         # 当前时间与tick最后一个时间的对比,如果有30秒未更新,则强制合成K线
         for symbol, tick_time in self.md_api.tick_last_time_dict.items():
             # 首次,没有时间
@@ -253,7 +265,6 @@ class CtpGateway(BaseGateway):
             # 如果接下来的时间差额大于20秒,强制生成一分钟Bar
             elif current_time - tick_time > timedelta(seconds=60):
                 self.md_api.bg_dict[symbol].generate()
-                print(self.md_api.bg_dict.items())
 
         """
         self.count += 1
@@ -295,10 +306,13 @@ class CtpMdApi(MdApi):
         self.brokerid = ""
 
         # 增
+        self.date = datetime.now().strftime("%Y%m%d")
         # K线合成容器,gateway推出一分钟K线
         self.bg_dict = {}
         # tick最后时间,用于生成一分钟K线
         self.tick_last_time_dict = {}
+
+        self.trading = False
     
     def onFrontConnected(self):
         """
@@ -350,8 +364,10 @@ class CtpMdApi(MdApi):
         price_tick = symbol_price_map.get(symbol, 0.0001)
         if not exchange:
             return
-        
-        timestamp = f"{data['ActionDay']} {data['UpdateTime']}.{int(data['UpdateMillisec']/100)}"
+        if exchange == Exchange.DCE:
+            timestamp = f"{self.date} {data['UpdateTime']}.{int(data['UpdateMillisec']/100)}"
+        else:
+            timestamp = f"{data['ActionDay']} {data['UpdateTime']}.{int(data['UpdateMillisec']/100)}"
         
         tick = TickData(
             symbol=symbol,
@@ -373,6 +389,9 @@ class CtpMdApi(MdApi):
             ask_volume_1=data["AskVolume1"],
             gateway_name=self.gateway_name
         )
+        # 郑商所会在8点45分的时候推送一个23:29的tick,这个tick,上面的逻辑过滤不掉
+        if not self.trading:
+            return
 
         # 获取例如rb代码
         symb = re.sub(r'\d', '', symbol).lower()

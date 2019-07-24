@@ -11,7 +11,6 @@ from vnpy.app.cta_strategy import (
 )
 
 
-
 class DoubleEmaStrategy(CtaTemplate):
     author = "用Python的交易员"
 
@@ -99,7 +98,19 @@ class DoubleEmaStrategy(CtaTemplate):
         # 产生60分钟的bar
         self.bg60.update_bar(bar)
 
-        am = am1
+    def on_5min_bar(self, bar: BarData):
+        am5 = self.am5
+        if am5.count != 0:
+            # 只有时间符合的才更新
+            if bar.datetime > am5.time_array[-1]:
+                am5.update_bar(bar)
+                self.write_log("double_ema_strategy 5分钟Bar" + str(bar.__dict__))
+            if not am5.inited:
+                return
+        else:
+            am5.update_bar(bar)
+
+        am = am5
         fast_ma = am.ema(self.fast_window, array=True)
         self.fast_ma0 = fast_ma[-1]
         self.fast_ma1 = fast_ma[-2]
@@ -108,12 +119,14 @@ class DoubleEmaStrategy(CtaTemplate):
         self.slow_ma0 = slow_ma[-1]
         self.slow_ma1 = slow_ma[-2]
 
+
+        self.ding(self.vt_symbol + " 5分钟 快速线:{0:.2f}  慢速线:{1:.2f}".format(self.fast_ma0, self.slow_ma0))
+
         cross_over = self.fast_ma0 > self.slow_ma0 and self.fast_ma1 < self.slow_ma1
         cross_below = self.fast_ma0 < self.slow_ma0 and self.fast_ma1 > self.slow_ma1
 
         if cross_over:
-            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1分钟EMA线上穿")
-
+            self.ding(" " + self.vt_symbol + " 5分钟EMA线上穿")
             if self.pos == 0:
                 self.buy(bar.close_price + self.slip, 1)
             elif self.pos < 0:
@@ -121,25 +134,13 @@ class DoubleEmaStrategy(CtaTemplate):
                 self.buy(bar.close_price + self.slip, 1)
 
         if cross_below:
-            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1分钟EMA线下穿")
+            self.ding(" " + self.vt_symbol + " 5分钟EMA线下穿")
 
             if self.pos == 0:
                 self.short(bar.close_price - self.slip, 1)
             elif self.pos > 0:
                 self.sell(bar.close_price - self.slip, 1)
                 self.short(bar.close_price - self.slip, 1)
-
-    def on_5min_bar(self, bar: BarData):
-        am5 = self.am5
-        if am5.count != 0:
-            # 只有时间符合的才更新
-            if bar.datetime > am5.time_array[-1]:
-                am5.update_bar(bar)
-                # self.write_log("double_ma_strategy 5分钟Bar" + str(bar.__dict__))
-            if not am5.inited:
-                return
-        else:
-            am5.update_bar(bar)
 
     def on_15min_bar(self, bar: BarData):
 
@@ -170,14 +171,13 @@ class DoubleEmaStrategy(CtaTemplate):
             return
 
     def on_60min_bar(self, bar: BarData):
-        # self.write_log("double_ma_strategy 1小时Bar" + str(bar.__dict__))
+        self.write_log("double_ema_strategy 1小时Bar" + str(bar.__dict__))
         # 先检查数据收录情况
         am60 = self.am60
         if am60.count != 0:
             # 只有时间符合的才更新
             if bar.datetime > am60.time_array[-1]:
                 am60.update_bar(bar)
-                self.write_log("double_ema_strategy 1小时Bar" + str(bar.__dict__))
         else:
             am60.update_bar(bar)
         if not am60.inited:
@@ -185,20 +185,22 @@ class DoubleEmaStrategy(CtaTemplate):
 
         am = am60
         fast_ma = am.sma(self.fast_window, array=True)
-        self.fast_ma0 = fast_ma[-1]
-        self.fast_ma1 = fast_ma[-2]
+        fast_ma0 = fast_ma[-1]
+        fast_ma1 = fast_ma[-2]
 
         slow_ma = am.sma(self.slow_window, array=True)
-        self.slow_ma0 = slow_ma[-1]
-        self.slow_ma1 = slow_ma[-2]
+        slow_ma0 = slow_ma[-1]
+        slow_ma1 = slow_ma[-2]
 
-        cross_over = self.fast_ma0 > self.slow_ma0 and self.fast_ma1 < self.slow_ma1
-        cross_below = self.fast_ma0 < self.slow_ma0 and self.fast_ma1 > self.slow_ma1
+        self.ding(self.vt_symbol + " 1小时 快速线:{0:.2f}  慢速线:{1:.2f}".format(self.fast_ma0, self.slow_ma0))
+
+        cross_over = fast_ma0 > slow_ma0 and fast_ma1 < slow_ma1
+        cross_below = fast_ma0 < slow_ma0 and fast_ma1 > slow_ma1
         if cross_over:
-            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1小时EMA线上穿")
+            self.ding(" " + self.vt_symbol + " 1小时EMA线上穿")
 
         if cross_below:
-            self.ding(bar.datetime_end.strftime("%Y-%m-%d %H:%M:%S") + self.vt_symbol + " 1小时EMA线下穿")
+            self.ding(" " + self.vt_symbol + " 1小时EMA线下穿")
         """
         if cross_over:
             if self.pos == 0:

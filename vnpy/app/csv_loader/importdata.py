@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 
 
 def example1():
-    file_name = "C:\\TB数据\\m2001.csv"
+    file_name = "C:\\TB数据\\au1912.csv"
     db_name = 'BarData'
-    symbol = "m2001"
+    symbol = "au1912"
     load_csv(file_name, db_name, symbol)
 
 
@@ -17,7 +17,7 @@ def load_csv(fileName, dbName, symbol):
     """将TradeBlazer导出的csv格式的历史分钟数据插入到Mongo数据库中"""
     start = time.time()
     print(u'开始读取CSV文件%s中的数据插入到%s的%s中' % (fileName, dbName, symbol))
-    exchange = Exchange.DCE
+    exchange = Exchange.SHFE
 
     # 创建数据库
     client = pymongo.MongoClient("localhost", 27017)
