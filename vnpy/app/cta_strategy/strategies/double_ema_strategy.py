@@ -110,7 +110,7 @@ class DoubleEmaStrategy(CtaTemplate):
         else:
             am5.update_bar(bar)
 
-        am = am5
+        am = self.am5
         fast_ma = am.ema(self.fast_window, array=True)
         self.fast_ma0 = fast_ma[-1]
         self.fast_ma1 = fast_ma[-2]
@@ -118,7 +118,6 @@ class DoubleEmaStrategy(CtaTemplate):
         slow_ma = am.ema(self.slow_window, array=True)
         self.slow_ma0 = slow_ma[-1]
         self.slow_ma1 = slow_ma[-2]
-
 
         self.ding(self.vt_symbol + " 5分钟 快速线:{0:.2f}  慢速线:{1:.2f}".format(self.fast_ma0, self.slow_ma0))
 
@@ -183,12 +182,12 @@ class DoubleEmaStrategy(CtaTemplate):
         if not am60.inited:
             return
 
-        am = am60
-        fast_ma = am.sma(self.fast_window, array=True)
+        am = self.am60
+        fast_ma = am.ema(self.fast_window, array=True)
         fast_ma0 = fast_ma[-1]
         fast_ma1 = fast_ma[-2]
 
-        slow_ma = am.sma(self.slow_window, array=True)
+        slow_ma = am.ema(self.slow_window, array=True)
         slow_ma0 = slow_ma[-1]
         slow_ma1 = slow_ma[-2]
 

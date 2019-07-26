@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 
 
 def example1():
-    file_name = "C:\\TB数据\\au1912.csv"
+    file_name = "C:\\TB数据\\ni1910.csv"
     db_name = 'BarData'
-    symbol = "au1912"
+    symbol = "ni1910"
     load_csv(file_name, db_name, symbol)
 
 
@@ -33,6 +33,7 @@ def load_csv(fileName, dbName, symbol):
         if i == 1:
             i += 1
         else:
+            i += 1
             bar_datetime = datetime.strptime(d[0], "%Y/%m/%d %H:%M")
             bar = BarData(gateway_name="CTP",
                           symbol=symbol,
@@ -58,7 +59,8 @@ def load_csv(fileName, dbName, symbol):
 
             flt = {'datetime': bar.datetime}
             collection.update_one(flt, {'$set': bar.__dict__}, upsert=True)
-            print(bar.datetime)
+            if not (i % 500):
+                print(bar.datetime)
 
     print(u'插入完毕，耗时：%s' % (time.time() - start))
 

@@ -274,6 +274,7 @@ class BarGenerator:
         """
         # If not inited, create window bar object
         # 如果没有window_bar
+        symb = re.sub(r'\d', '', bar.symbol).lower()
         dt = bar.datetime.replace(second=0, microsecond=0)
         if self.window == 3:
             period = Interval.MINUTE3
@@ -292,7 +293,7 @@ class BarGenerator:
             dt_start = bar.datetime.replace(minute=math.floor(dt.minute / 30) * 30)
             dt_end = dt_start + timedelta(minutes=30)
             # 如果是商品期货,小时==10 分钟 == 0,30分钟线的终值为15
-            if (bar.symbol in COMMODITY) and \
+            if (symb in COMMODITY) and \
                 (bar.datetime.hour == 10) and \
                 (dt_start.minute == 0):
                 dt_end = dt_end.replace(minute=15)
@@ -303,13 +304,13 @@ class BarGenerator:
             if dt_start.hour == 11:
                 dt_end = dt_end.replace(minute=30)
 
-            if (dt_start.hour == 13) and (bar.symbol in COMMODITY):
+            elif (dt_start.hour == 13) and (symb in COMMODITY):
                 dt_start = dt_start.replace(minute=30)
 
-            if (dt_start.hour == 23) and (bar.symbol in NIGHTGROUP_2330):
+            elif (dt_start.hour == 23) and (symb in NIGHTGROUP_2330):
                 dt_end = dt_end.replace(minute=30)
 
-            if (dt_start.hour == 2) and (bar.symbol in NIGHTGROUP_0230):
+            elif (dt_start.hour == 2) and (symb in NIGHTGROUP_0230):
                 dt_end = dt_end.replace(minute=30)
 
         if not self.window_bar:
@@ -367,14 +368,11 @@ class BarGenerator:
         # 先假定没有完成
         finished = False
 
-        # 如果是分钟Bar
-        if self.interval == Interval.MINUTE:
-            # x-minute bar
-            # 如果是5分钟,则规则为: 4 + 1 整除5就推送,如果是15分钟,规则: 14 + 1 整除 15 推送
-            # 如果是60分钟,则59+1 % 60 = 0, 其余不为0
-            if not ((bar.datetime.minute + 1) % self.window) or \
-                    ((bar.datetime + timedelta(minutes=1)) >= self.window_bar.datetime_end):
-                finished = True
+        # x-minute bar
+        # 如果是5分钟,则规则为: 4 + 1 整除5就推送,如果是15分钟,规则: 14 + 1 整除 15 推送
+        # 如果是60分钟,则59 + 1 % 60 = 0, 其余不为0
+        if not ((bar.datetime.minute + 1) % self.window):
+            finished = True
 
         if finished:
             self.on_window_bar(self.window_bar)
@@ -385,27 +383,66 @@ class BarGenerator:
 
     def update_bar_hour(self, bar: BarData):
         """
-        这里输入的是小时Bar
+        小时线合成更高的小时线,包括日线
         """
         # If not inited, create window bar object
         # 如果没有初始化
+        # 创建Bar数据
+        symb = re.sub(r'\d', '', bar.symbol).lower()
+        dt = bar.datetime.replace(second=0, microsecond=0)
+        if self.window == 2:
+            period = Interval.HOUR2
+            dt_start = bar.datetime.replace(hour=math.floor(dt.minute / 2) * 2)
+            dt_end = dt_start + timedelta(hours=2)
+        elif self.window == 4:
+            period = Interval.HOUR4
+            dt_start = bar.datetime.replace(hour=math.floor(dt.minute / 4) * 4)
+            dt_end = dt_start + timedelta(hours=4)
+        elif self.window == 6:
+            period = Interval.HOUR6
+            dt_start = bar.datetime.replace(hour=math.floor(dt.minute / 6) * 6)
+            dt_end = dt_start + timedelta(hours=6)
+        elif self.window == 24:
+            period = Interval.DAILY
+            # 如果是商品期货
+            if symb in COMMODITY:
+                # 日盘品种
+                if symb in DAYGROUP_1500:
+                    dt_start = bar.datetime.replace(hour=9)
+                    dt_end = bar.datetime.replace(hour=15)
+                # 夜盘品种
+                else:
+                    # 如果输入的K线的星期小于5 并且是夜盘品种
+                    if bar.datetime.weekday() < 4 and bar.datetime.hour > 20:
+                        dt_start = bar.datetime.replace(hour=21)
+                        dt_end = (dt_start + timedelta(hours=10)).replace(hour=15)
+                    # 如果不连续的K线是盘品种,并且当前时间小于晚上8点,起始时间为昨天的21点
+                    elif bar.datetime.weekday() < 4 and bar.datetime.hour < 20:
+                        dt_start = (bar.datetime.replace(hour=0) - timedelta(hours=1)).replace(hour=21)
+                        dt_end = bar.datetime.replace(hour=15)
+                    # 周五晚上 夜盘品种
+                    elif bar.datetime.weekday() == 4 and bar.datetime.hour > 20:
+                        dt_start = bar.datetime.replace(hour=21)
+                        dt_end = (dt_start + timedelta(days=3)).replace(hour=15)
+                    # 周六凌晨 夜盘品种
+                    elif bar.datetime.weekday() == 5 and bar.datetime.hour < 5:
+                        dt_start = (bar.datetime.replace(hour=21) - timedelta(days=1))
+                        dt_end = (dt_start + timedelta(days=3)).replace(hour=15)
+                    # 周一
+                    elif bar.datetime.weekday() == 0 and bar.datetime.hour < 15:
+                        dt_start = (bar.datetime.replace(hour=21) - timedelta(days=3))
+                        dt_end = (dt_start + timedelta(days=3)).replace(hour=15)
+
         if not self.window_bar:
             # Generate timestamp for bar data
-            # 将数据变成整点数据
-            dt = bar.datetime.replace(minute=0, second=0, microsecond=0)
-
+            # 如果是分钟Bar,创建datetime
             # 创建Bar数据
-            if self.window == 2:
-                period = Interval.HOUR2
-            elif self.window == 4:
-                period = Interval.HOUR4
-            elif self.window == 6:
-                period = Interval.HOUR6
-
             self.window_bar = BarData(
                 symbol=bar.symbol,
                 exchange=bar.exchange,
                 datetime=dt,
+                datetime_start=dt_start,
+                datetime_end=dt_end,
                 interval=period,
                 gateway_name=bar.gateway_name,
                 open_price=bar.open_price,
@@ -414,8 +451,28 @@ class BarGenerator:
                 open_interest=bar.open_interest
             )
         # Otherwise, update high/low price into window bar
-        # 如果有初始化,则进行高地价的更新
+        # 如果已经进行了初始化,
         else:
+            # 这里加入新的合成逻辑，如果是不连续的bar,先推送
+            # 如果有跳线的情况
+            if bar.datetime >= self.window_bar.datetime_end:
+                self.on_window_bar(self.window_bar)
+                self.window_bar = None
+
+                self.window_bar = BarData(
+                    symbol=bar.symbol,
+                    exchange=bar.exchange,
+                    datetime=dt,
+                    datetime_start=dt_start,
+                    datetime_end=dt_end,
+                    interval=period,
+                    gateway_name=bar.gateway_name,
+                    open_price=bar.open_price,
+                    high_price=bar.high_price,
+                    low_price=bar.low_price,
+                    open_interest=bar.open_interest
+                )
+
             self.window_bar.high_price = max(
                 self.window_bar.high_price, bar.high_price)
             self.window_bar.low_price = min(
@@ -431,14 +488,11 @@ class BarGenerator:
         # 先假定没有完成
         finished = False
 
-        # 如果存在上一个Bar
-        if self.last_bar and bar.datetime.hour != self.last_bar.datetime.hour:
-            # 1-hour bar
-            # 如果是一小时的Bar,则小时Bar推送结束
-            # 如果当前的
-            if not (bar.datetime.hour + 1) % self.window:
-                finished = True
-                self.interval_count = 0
+        # x-minute bar
+        # 如果是5分钟,则规则为: 4 + 1 整除5就推送,如果是15分钟,规则: 14 + 1 整除 15 推送
+        # 如果是60分钟,则59 + 1 % 60 = 0, 其余不为0
+        if not (bar.datetime.hour + 1) == bar.datetime_end.hour:
+            finished = True
 
         if finished:
             self.on_window_bar(self.window_bar)

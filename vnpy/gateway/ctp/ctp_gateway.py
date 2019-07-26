@@ -364,6 +364,7 @@ class CtpMdApi(MdApi):
         price_tick = symbol_price_map.get(symbol, 0.0001)
         if not exchange:
             return
+
         if exchange == Exchange.DCE:
             timestamp = f"{self.date} {data['UpdateTime']}.{int(data['UpdateMillisec']/100)}"
         else:
